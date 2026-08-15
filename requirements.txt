@@ -12,9 +12,7 @@ SpeechRecognition
 pyperclip
 matplotlib
 beautifulsoup4
-pvporcupine
 pyaudio
 opencv-python
 psutil
-openai-whisper
 numpy
