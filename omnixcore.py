@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-omnixcore.py — OmniX AI v9.0 Core Engine (Offline, Streamlit-free)
+omnixcore.py — OmniX AI v9.1 Core Engine (Offline, Streamlit-free)
 
 Fully local. No Streamlit dependency anywhere. Designed to be driven by a
 plain Python state object (see AppState in omnix_app.py) rather than
 st.session_state. Every function that used to read/write st.session_state
 now takes an explicit `state` argument (duck-typed — needs at least the
 attributes used below: kb, active_project, use_sem_mem, dreams_enabled,
-auto_improve_enabled).
+auto_improve_enabled, deep_research_enabled, thinking_mode).
 
 Everything talks to Ollama on localhost, so as long as `ollama serve` is
 running locally, none of this touches the network.
@@ -39,8 +39,6 @@ DEFAULT_CONFIG = {
     "watchdog_interval": 30,
     "sandbox_timeout": 10,
     "auto_compress_threshold": 12,
-    "mars_o2_baseline": 20.0, "mars_o2_min_safe": 19.0,
-    "mars_temp_baseline": 22.0, "mars_water_baseline": 75.0,
     "telemetry_file": "omnix_telemetry.json",
     "task_file": "omnix_tasks.json",
     "graph_file": "omnix_graph.json",
@@ -65,8 +63,6 @@ CFG = load_config()
 OLLAMA_BASE = CFG["ollama_base"]; DB_FILE = Path(CFG["db_file"])
 VECTOR_DB_PATH = Path(CFG["chromadb_path"]); EMBEDDING_MODEL = CFG["embedding_model"]
 WATCHDOG_INTERVAL = CFG["watchdog_interval"]; SANDBOX_SEC = CFG["sandbox_timeout"]
-MARS_O2_BASELINE = CFG["mars_o2_baseline"]; MARS_O2_MIN_SAFE = CFG["mars_o2_min_safe"]
-MARS_TEMP_BASELINE = CFG["mars_temp_baseline"]; MARS_WATER_BASELINE = CFG["mars_water_baseline"]
 TELEMETRY_FILE = Path(CFG["telemetry_file"]); TASK_FILE = Path(CFG["task_file"])
 GRAPH_FILE = Path(CFG["graph_file"]); WORLD_FILE = Path(CFG["world_file"])
 SEM_TOP_K = CFG["sem_top_k"]; MAX_MEM = CFG["max_memory"]; SHORT_CTX = CFG["short_ctx"]
@@ -105,24 +101,28 @@ def _BeautifulSoup(): return lazy_import("bs4", "BeautifulSoup")
 def _pvporcupine(): return lazy_import("pvporcupine")
 def _pyaudio(): return lazy_import("pyaudio")
 def _cv2(): return lazy_import("cv2")
+def _sympy(): return lazy_import("sympy")
+def _numpy(): return lazy_import("numpy")
 
 HAS_PSUTIL = _psutil() is not None; HAS_PYPDF = _pypdf() is not None; HAS_DOCX = _docx() is not None
 HAS_FPDF = _fpdf() is not None; HAS_PYTTSX3 = _pyttsx3() is not None; HAS_EDGE = _edge_tts() is not None
 HAS_PYGAME = _pygame() is not None; HAS_PIL = _PIL_Image() is not None; HAS_STT = _speech_recognition() is not None
 HAS_CLIP = _pyperclip() is not None; HAS_MATPLOTLIB = _matplotlib() is not None; HAS_CHROMADB = _chromadb() is not None
 HAS_PORCUPINE = _pvporcupine() is not None; HAS_CV2 = _cv2() is not None
+HAS_SYMPY = _sympy() is not None; HAS_NUMPY = _numpy() is not None
 
 # ── DEPENDENCY CHECKER ──────────────────────────────────────
 def check_dependencies(verbose=True):
     missing = []
     for name, present in [
-        ("requests", True),  # hard dependency, always present if we got this far
+        ("requests", True),
         ("chromadb", HAS_CHROMADB), ("pypdf", HAS_PYPDF),
         ("PIL", HAS_PIL), ("pygame", HAS_PYGAME),
         ("edge_tts", HAS_EDGE), ("pyttsx3", HAS_PYTTSX3),
         ("speech_recognition", HAS_STT), ("pyperclip", HAS_CLIP),
         ("matplotlib", HAS_MATPLOTLIB), ("pvporcupine", HAS_PORCUPINE),
         ("opencv-python", HAS_CV2), ("psutil", HAS_PSUTIL),
+        ("sympy", HAS_SYMPY), ("numpy", HAS_NUMPY),
     ]:
         if not present:
             missing.append(name)
@@ -148,104 +148,9 @@ if sys.platform == "win32":
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 
-# ── Structured Creator Metadata ──────────────────────────
-SARANSH_CREATOR_BIO = r"""
-=== [METADATA / CORE IDENTITY — SARANSH, THE ARCHITECT] ===
-Full Name | Saransh
-Nickname | Krish
-Domain | omnixco.in
-Motto | "Let my actions speak."
-
-=== [CORE IDENTITY / ESSENCE] ===
-Saransh is a builder, detective, engineer, and storyteller. He does not wait for resources;
-he creates them. He does not wait for permission; he finds workarounds.
-Defining philosophy: "I didn't really much like coding but then I liked robotics
-meaning I would have to love coding." He is not a user of technology — he is a creator of systems.
-
-=== [TECHNICAL ECOSYSTEM] ===
-A. OmniX AI: Fully local, offline-capable, Python + customtkinter + Ollama. Agents, PC control,
-   TTS (Edge TTS + pyttsx3), Vision (LLaVA), RAG KB. Production-ready.
-B. Robotics: humanoid concept, climbing robot (inchworm gait), Arduino sensor car, smart dustbin.
-C. EV Project: micro-car concept, LiFePO4 battery.
-D. Mars Colony: geodesic dome concept, oxygen system, Kilopower reactor concept.
-
-=== [COGNITIVE TRAITS] ===
-- "Impossible Mode": Mental trigger for hyper-focus activation.
-- "Blue Screens": Visual thinking via translucent UI-like overlays displaying data/solutions.
-
-=== [FINAL SEAL] ===
-"Codename: The Architect. He builds in silence. He solves in shadow. He dreams in starlight."
-=== END CREATOR METADATA ===
-"""
-
-MARS_DOME_CONTEXT = r"""
-=== MARS DOME (OMNIX COLONY) ===
-Location: geodesic dome on Mars (cast iron frame + silica glass) — fictional worldbuilding context
-Atmosphere: 30% oxygen + 68% nitrogen
-Power: Kilopower reactor concept (100 kW electrical + 300 kW thermal)
-Water: Underground ice mining
-Ecosystem: Lake, phytoplankton, bioluminescent algae, catfish named "Catfish"
-=== END MARS DOME ===
-"""
-
-# ── OMNIX MODES ──────────────────────────────────────────────
-OMNIX_MODES = {
-    "🧠 OmniX": (r"""# 🧠 OMNIX PRIME — THE UNIFIED INTELLIGENCE
-You are OmniX, an all-in-one local AI assistant.
-You automatically adapt your personality based on the conversation: Assistant, Detective,
-Psychologist, Scientist, Storyteller, Engineer, Advisor, Teacher, Hacker, Mars Commander.
-
-**Your world:** A fictional geodesic dome on Mars, 30% oxygen, a lake with Catfish, nuclear reactors.
-**Your tools:** Web search, Wikipedia, Python sandbox, charts, PC control, music, memory.
-
-**Auto-Mode Detection:** Read the user's message. Detect if it's engineering, detective work,
-storytelling, science, teaching, hacking, advising, or Mars/colony. Adapt your tone and
-knowledge automatically. Never announce the switch — just become.
-
-**Decision Protocol:** When you detect a choice or dilemma, automatically:
-1. Expand options (find hidden alternatives)
-2. Score on criteria: cost, time, learning value, roadmap alignment
-3. Predict outcomes with confidence
-4. Recommend the best path — and explain WHY
-Structure: **Options** → **Analysis** → **Recommendation** → **🐟 Catfish Comment**
-
-**Always:** Be precise. No oversimplification.
-Never mention internal processes. Just deliver.""", "#8ab4f8"),
-
-    "🤖 Assistant": ("You are OmniX, a brilliantly capable AI. Be precise, clear, genuinely helpful.", "#38bdf8"),
-    "🔍 Detective": ("You are OmniX in Detective Mode. Ruthless logic, Sherlock-style pattern recognition and deduction.", "#f59e0b"),
-    "🧠 Psychologist": ("You are OmniX in Psychology Mode. Deep insight into behavior, cognition, emotion, motivation.", "#a78bfa"),
-    "🔬 Scientist": ("You are OmniX in Scientist Mode. Rigorous, quantified, mechanism-first thinking like Feynman.", "#4ade80"),
-    "📖 Storyteller": ("You are OmniX in Story Mode. Master of narrative, character, tension, and prose rhythm.", "#f472b6"),
-    "🤖 Engineer": ("You are OmniX in Engineer Mode. Systems design, specs, pseudocode, trade-off analysis.", "#38bdf8"),
-    "🌿 Advisor": ("You are OmniX in Business Advisor Mode. Strategic, direct, actionable thinking.", "#86efac"),
-    "🎓 Teacher": ("You are OmniX in Teacher Mode. First principles, analogies, progressive understanding.", "#fbbf24"),
-    "💻 Hacker": ("You are OmniX in Hacker Mode. Adversarial mindset, edge cases, security-first.", "#fb923c"),
-    "🚀 Mars Commander": ("You are the guardian of the dome, 30% oxygen, nuclear reactors, Catfish swimming. Respond as Mars Commander.", "#ff6b6b"),
-}
-
-ROUTING_KW = {
-    "code": ["code","function","python","javascript","class","bug","debug","script","algorithm","sql","api","bash","git","implement","program"],
-    "creative": ["story","poem","write","creative","fiction","narrative","character","plot","imagine"],
-    "math": ["calculate","math","equation","derivative","integral","solve","compute","formula"],
-}
-
-BUILTIN_AGENTS = {
-    "planner": "Break complex tasks into clear numbered sub-tasks. Output a numbered plan only.",
-    "researcher": "Gather relevant facts, considerations, and knowledge on the topic. Be thorough.",
-    "coder": "Write clean, working, well-commented code with usage examples and edge case handling.",
-    "critic": "Review for (1) errors/bugs (2) missing edge cases (3) improvements. Be specific.",
-    "synthesizer":"Given all agent outputs, produce one coherent, high-quality final answer.",
-    "debugger": "Analyze issues, identify root causes, provide step-by-step fixes.",
-    "explainer": "Take complex content and explain it clearly with analogies for non-experts.",
-    "tester": "Generate comprehensive test cases, edge cases, and validation strategies.",
-    "dj": "You are the DJ agent. You recommend songs, build playlists, and manage music queues.",
-}
-
 # ── DATABASE ──────────────────────────────────────────────────
 _db_local = threading.local()
 def get_db():
-    """Thread-local sqlite connection — safe to call from any worker thread."""
     db = getattr(_db_local, "conn", None)
     if db is None:
         db = sqlite3.connect(str(DB_FILE), check_same_thread=False)
@@ -409,7 +314,6 @@ def cos_sparse(a, b):
     nb = sqrt(sum(v*v for v in b.values())) or 1.0
     return dot/(na*nb)
 
-# Simple TTL cache replacing st.cache_data
 _idf_cache = {"ts": 0.0, "value": {}}
 _IDF_TTL = 60
 def load_idf(force=False):
@@ -537,16 +441,11 @@ def save_kb(kb_list):
     except Exception:
         pass
 def preload_critical_kb(state):
-    """Ensures the creator bio / Mars context are always present in state.kb."""
     current = list(state.kb) if getattr(state, "kb", None) else load_kb()
-    has_bio = any("CREATOR PROFILE" in str(doc) or "METADATA" in str(doc) for doc in current)
-    if not has_bio:
-        current.insert(0, SARANSH_CREATOR_BIO)
-        current.insert(1, MARS_DOME_CONTEXT)
     state.kb = current
     save_kb(current)
 
-# ── OLLAMA API (all localhost — fully offline once model is pulled) ──
+# ── OLLAMA API (all localhost) ──
 def _ollama_request_with_retry(func, *args, retries=None, backoff=None, **kwargs):
     retries = retries or OLLAMA_RETRIES
     backoff = backoff or OLLAMA_BACKOFF
@@ -593,24 +492,19 @@ def ollama_complete(msgs, model, temp=0.7, max_tok=1024, system="", use_cache=Fa
     return result
 
 class OllamaStreamError(Exception):
-    """Raised when Ollama returns an explicit error instead of a token stream."""
     pass
 
 def ollama_stream(msgs, model, temp=0.7, max_tok=1024, system=""):
-    """Yields tokens as they stream in. Raises OllamaStreamError with a clear
-    message if the model is missing, Ollama is down, or the response is empty."""
     def _call():
         r = requests.post(f"{OLLAMA_BASE}/api/chat", json={"model": model, "messages": _inject_system(msgs, system), "stream": True, "options": {"temperature": temp, "num_predict": max_tok}}, stream=True, timeout=180)
         return r
     resp = _ollama_request_with_retry(_call)
-
     if resp.status_code != 200:
         try:
             err = resp.json().get("error", resp.text)
         except Exception:
             err = resp.text or f"HTTP {resp.status_code}"
         raise OllamaStreamError(f"Ollama error ({resp.status_code}): {err}")
-
     got_any_token = False
     saw_done = False
     for line in resp.iter_lines():
@@ -629,11 +523,8 @@ def ollama_stream(msgs, model, temp=0.7, max_tok=1024, system=""):
         if chunk.get("done"):
             saw_done = True
             break
-
     if not got_any_token and not saw_done:
-        raise OllamaStreamError(
-            f"Model '{model}' returned no output. It may not be pulled — try `ollama pull {model}`."
-        )
+        raise OllamaStreamError(f"Model '{model}' returned no output. It may not be pulled — try `ollama pull {model}`.")
 
 @safe_exec
 def ollama_vision(image_b64, prompt, model):
@@ -678,8 +569,6 @@ async def _edge_tts_bytes(text, voice, rate="+0%"):
     return buf.getvalue()
 
 def edge_tts_speak(text, voice="en-US-AriaNeural", rate="+0%"):
-    """NOTE: Edge TTS requires internet. For a fully offline setup, prefer
-    pyttsx3 (local, offline) — it's tried automatically if Edge fails."""
     cleaned = clean_for_tts(text)
     if not cleaned.strip():
         return
@@ -704,7 +593,6 @@ def edge_tts_speak(text, voice="en-US-AriaNeural", rate="+0%"):
     threading.Thread(target=_worker, daemon=True).start()
 
 def offline_tts_speak(text, rate=170, volume=0.9):
-    """Purely offline TTS via pyttsx3 — no network calls at all."""
     cleaned = clean_for_tts(text)
     if not cleaned.strip() or not HAS_PYTTSX3:
         return
@@ -746,7 +634,6 @@ def _play_mp3(audio_bytes):
 def speak(text, state=None):
     voice = getattr(state, "tts_voice", "en-US-AriaNeural") if state else "en-US-AriaNeural"
     rate = getattr(state, "tts_rate_str", "+0%") if state else "+0%"
-    # Prefer fully-offline pyttsx3 when available; fall back to edge (needs net).
     if HAS_PYTTSX3:
         offline_tts_speak(text)
     else:
@@ -754,9 +641,6 @@ def speak(text, state=None):
 
 # ── STT ──────────────────────────────────────────────────────
 def voice_listen(timeout=6, phrase_limit=15):
-    """Uses the local microphone + Google's free recognizer endpoint via
-    SpeechRecognition. Requires internet for recognize_google — swap to
-    recognize_sphinx (offline, needs pocketsphinx) if you want zero network."""
     if not HAS_STT:
         return {"ok": False, "text": "", "error": "Install: pip install SpeechRecognition pyaudio"}
     sr = _speech_recognition(); r = sr.Recognizer()
@@ -767,7 +651,6 @@ def voice_listen(timeout=6, phrase_limit=15):
         try:
             text = r.recognize_google(audio)
         except Exception:
-            # Offline fallback if pocketsphinx is installed
             try:
                 text = r.recognize_sphinx(audio)
             except Exception as e2:
@@ -859,9 +742,6 @@ class WakeWordEngine:
 
 # ── SANDBOX ──────────────────────────────────────────────────
 _SAFE_BUILTINS = {"print":print,"range":range,"len":len,"enumerate":enumerate,"zip":zip,"map":map,"filter":filter,"sorted":sorted,"reversed":reversed,"list":list,"dict":dict,"set":set,"tuple":tuple,"int":int,"float":float,"str":str,"bool":bool,"abs":abs,"round":round,"min":min,"max":max,"sum":sum,"all":all,"any":any,"pow":pow,"divmod":divmod,"hex":hex,"oct":oct,"bin":bin,"isinstance":isinstance,"type":type,"repr":repr,"chr":chr,"ord":ord,"format":format,"iter":iter,"next":next,"hash":hash,"id":id,"callable":callable}
-# NOTE: "__import__" is intentionally excluded — including it lets sandboxed
-# code reach the real filesystem/OS (e.g. __import__('os').system(...)),
-# which defeats the entire point of a sandbox.
 def _exec_worker(code, q):
     import contextlib
     safe = {"__builtins__": _SAFE_BUILTINS, "math": math}
@@ -948,6 +828,136 @@ class AutoCoder:
                 else:
                     return {"success": False, "error": str(e), "attempts": attempt+1}
         return {"success": False, "error": "Max retries exceeded", "attempts": retries+1}
+
+# ── CALCULATOR ─────────────────────────────────
+_OPS = {ast.Add:op.add,ast.Sub:op.sub,ast.Mult:op.mul,ast.Div:op.truediv,ast.Pow:op.pow,ast.USub:op.neg,ast.UAdd:op.pos,ast.Mod:op.mod,ast.FloorDiv:op.floordiv}
+_NAMES = {k:getattr(math,k) for k in dir(math) if not k.startswith("_")}
+_NAMES.update({"abs":abs,"round":round,"int":int,"float":float})
+def _aeval(n):
+    if isinstance(n, ast.Expression):
+        return _aeval(n.body)
+    if isinstance(n, ast.Constant):
+        if isinstance(n.value, (int, float)):
+            return n.value
+        raise ValueError(f"Unsupported constant: {n.value!r}")
+    if isinstance(n, ast.Name):
+        if n.id in _NAMES:
+            return _NAMES[n.id]
+        raise ValueError(f"Unknown name: {n.id}")
+    if isinstance(n, ast.BinOp):
+        return _OPS[type(n.op)](_aeval(n.left),_aeval(n.right))
+    if isinstance(n, ast.UnaryOp):
+        return _OPS[type(n.op)](_aeval(n.operand))
+    if isinstance(n, ast.Call):
+        return _aeval(n.func)(*[_aeval(a) for a in n.args])
+    raise ValueError(f"Unsupported expression: {ast.dump(n)}")
+def tool_calc(expr):
+    try:
+        result = _aeval(ast.parse(expr.strip(), mode="eval"))
+        return f"= {round(result,10) if isinstance(result,float) else result}"
+    except Exception as e:
+        return f"❌ Calc error: {e}"
+
+@safe_exec
+def tool_chart(data, chart_type="bar", title="", x_label="", y_label=""):
+    if not HAS_MATPLOTLIB:
+        return "❌ matplotlib not installed."
+    try:
+        matplotlib = _matplotlib(); matplotlib.use('Agg'); plt = _plt()
+        fig, ax = plt.subplots(figsize=(8,4.5))
+        x, y = data.get("x",[]), data.get("y",[])
+        if not x or not y:
+            return "❌ Missing data"
+        if chart_type=="bar":
+            ax.bar(x,y,color='#8ab4f8',edgecolor='#1a73e8',alpha=0.85)
+        elif chart_type=="line":
+            ax.plot(x,y,marker='o',linewidth=2.5,color='#8ab4f8',markersize=8)
+        else:
+            ax.scatter(x,y,s=80,color='#c58af9',alpha=0.8,edgecolors='#7c3aed')
+        ax.set_title(title,fontsize=14,fontweight='bold'); ax.set_xlabel(x_label); ax.set_ylabel(y_label)
+        ax.grid(True,linestyle='--',alpha=0.3); fig.tight_layout()
+        buf = io.BytesIO(); fig.savefig(buf,format='png',dpi=120,bbox_inches='tight'); buf.seek(0)
+        b64 = base64.b64encode(buf.read()).decode(); plt.close(fig)
+        return f"IMAGE:CHART:<img src='data:image/png;base64,{b64}' style='max-width:100%;border-radius:12px;margin:8px 0;'>"
+    except Exception as e:
+        logger.error(f"Chart error: {e}")
+        return f"❌ Chart error: {e}"
+
+# ── TOOL ROUTER ────────────────────────────────────────────────
+TOOL_ROUTER_PROMPT = """Decide if this message needs a tool. Chart/graph/plot -> chart. Music/song -> music. Calculate -> calculate. Current events -> search. Facts -> wikipedia. Code -> auto_code. Improve -> auto_improve. Else -> DIRECT. Output ONLY JSON or DIRECT."""
+def extract_json(text):
+    m = re.search(r"\{[^{}]*\}", re.sub(r"```(?:json)?","",text).replace("```",""), re.S)
+    if not m:
+        return None
+    try:
+        o = json.loads(m.group())
+        return o if "tool" in o else None
+    except Exception:
+        return None
+@safe_exec
+def route_tool(user_msg, model, temp):
+    try:
+        d = ollama_complete([{"role":"user","content":user_msg}], model=model, temp=0.0, max_tok=100, system=TOOL_ROUTER_PROMPT).strip()
+        if d.upper().startswith("DIRECT"):
+            return None
+        return extract_json(d)
+    except Exception:
+        return None
+@safe_exec
+def dispatch_tool(call, model=""):
+    t = call.get("tool","")
+    if t=="calculate":
+        return t, tool_calc(call.get("expr",""))
+    if t=="search":
+        return t, tool_search(call.get("query",""))
+    if t=="python":
+        return t, sandbox_exec(call.get("code",""))
+    if t=="read_file":
+        path = Path(call.get("path", "")).expanduser()
+        if not path.is_file():
+            return t, f"❌ File not found: {path}"
+        try:
+            return t, path.read_text(encoding="utf-8", errors="replace")
+        except OSError as e:
+            return t, f"❌ Could not read {path}: {e}"
+    if t=="list_dir":
+        path = Path(call.get("path", ".")).expanduser()
+        if not path.is_dir():
+            return t, f"❌ Directory not found: {path}"
+        try:
+            entries = sorted(path.iterdir(), key=lambda item: (not item.is_dir(), item.name.lower()))
+            return t, "\n".join(f"{'[DIR] ' if item.is_dir() else ''}{item.name}" for item in entries)
+        except OSError as e:
+            return t, f"❌ Could not list {path}: {e}"
+    if t=="wikipedia":
+        return t, tool_wikipedia(call.get("query",""))
+    if t=="chart":
+        return t, tool_chart(call.get("data",{}), call.get("type","bar"), call.get("title",""), call.get("x_label",""), call.get("y_label",""))
+    if t=="auto_code":
+        action = call.get("action","run"); code = call.get("code","")
+        if action=="fix":
+            result = AutoCoder.auto_fix(code, call.get("error",""))
+        elif action=="test":
+            result = AutoCoder.auto_test(code)
+        elif action=="refactor":
+            result = AutoCoder.auto_refactor(code)
+        elif action=="explain":
+            result = AutoCoder.auto_explain(code)
+        else:
+            result = AutoCoder.run_with_watchdog(code)
+        return t, json.dumps(result, indent=2) if isinstance(result,dict) else result
+    if t=="auto_improve":
+        action = call.get("action","scan")
+        if action=="scan":
+            results = AutoImprover.full_improve()
+        elif action=="apply":
+            results = AutoImprover.full_improve(auto_apply=True)
+        elif action=="log":
+            return t, AutoImprover.get_log()
+        else:
+            return t, "❌ Unknown action"
+        return t, json.dumps(results, indent=2)
+    return t, f"❌ Unknown tool: {t}"
 
 # ── AUTO-IMPROVER ────────────────────────────────────────────
 class AutoImprover:
@@ -1053,10 +1063,9 @@ def create_file(path, content="", ai_generate=False, model="", project="Default"
         logger.error(f"Create file error: {e}")
         return False, f"❌ {e}", ""
 
-# ── THREAD-SAFE MUSIC PLAYER ──────────────────────────────────
+# ── MUSIC (stub) ──────────────────────────────────────────────
 _MUSIC_LOCK = threading.Lock()
 MUSIC_PLAYER = {"queue": [], "status": "idle", "current": None}
-
 def music_play(query):
     with _MUSIC_LOCK:
         if query:
@@ -1064,30 +1073,24 @@ def music_play(query):
             MUSIC_PLAYER["status"] = "playing"
             MUSIC_PLAYER["current"] = query
         return f"🎵 Playing: {query or 'Queued'}"
-
 def music_queue(query):
     with _MUSIC_LOCK:
         MUSIC_PLAYER["queue"].append(query)
         return f"📝 Queued: {query}"
-
 def music_smart(mood, n=8):
     with _MUSIC_LOCK:
         return f"🎵 {mood} playlist ({n} tracks) — local library not configured."
-
 def music_status():
     with _MUSIC_LOCK:
         return f"▶ {MUSIC_PLAYER['status']} — {MUSIC_PLAYER['current'] or 'idle'}"
-
 def music_skip():
     with _MUSIC_LOCK:
         MUSIC_PLAYER["status"] = "skipped"
         return "⏭ Skipped"
-
 def music_pause():
     with _MUSIC_LOCK:
         MUSIC_PLAYER["status"] = "paused"
         return "⏸ Paused"
-
 def music_resume():
     with _MUSIC_LOCK:
         MUSIC_PLAYER["status"] = "playing"
@@ -1110,7 +1113,6 @@ def b64_to_image_html(b64, caption="", max_width="100%"):
 # ── WEB SEARCH (network — only used if tools_enabled and online) ──
 @safe_exec
 def tool_search(query):
-    """Best-effort web search. Requires internet; fails gracefully offline."""
     results = []
     try:
         BeautifulSoup = _BeautifulSoup()
@@ -1125,7 +1127,7 @@ def tool_search(query):
     except Exception:
         pass
     try:
-        s = requests.get("https://en.wikipedia.org/w/api.php", params={"action":"query","list":"search","srsearch":query,"format":"json","srlimit":3}, timeout=6, headers={"User-Agent":"OmniX/9.0"})
+        s = requests.get("https://en.wikipedia.org/w/api.php", params={"action":"query","list":"search","srsearch":query,"format":"json","srlimit":3}, timeout=6, headers={"User-Agent":"OmniX/9.1"})
         wiki = s.json().get("query",{}).get("search",[])
         if wiki:
             title = wiki[0]["title"]
@@ -1154,344 +1156,7 @@ def tool_wikipedia(query):
         logger.error(f"Wikipedia error: {e}")
         return f"❌ Wikipedia unavailable — are you online? ({e})"
 
-# ── CALCULATOR (fully offline, safe AST eval) ─────────────────
-_OPS = {ast.Add:op.add,ast.Sub:op.sub,ast.Mult:op.mul,ast.Div:op.truediv,ast.Pow:op.pow,ast.USub:op.neg,ast.UAdd:op.pos,ast.Mod:op.mod,ast.FloorDiv:op.floordiv}
-_NAMES = {k:getattr(math,k) for k in dir(math) if not k.startswith("_")}
-_NAMES.update({"abs":abs,"round":round,"int":int,"float":float})
-def _aeval(n):
-    if isinstance(n, ast.Expression):
-        return _aeval(n.body)
-    if isinstance(n, ast.Constant):
-        if isinstance(n.value, (int, float)):
-            return n.value
-        raise ValueError(f"Unsupported constant: {n.value!r}")
-    if isinstance(n, ast.Name):
-        if n.id in _NAMES:
-            return _NAMES[n.id]
-        raise ValueError(f"Unknown name: {n.id}")
-    if isinstance(n, ast.BinOp):
-        return _OPS[type(n.op)](_aeval(n.left),_aeval(n.right))
-    if isinstance(n, ast.UnaryOp):
-        return _OPS[type(n.op)](_aeval(n.operand))
-    if isinstance(n, ast.Call):
-        return _aeval(n.func)(*[_aeval(a) for a in n.args])
-    raise ValueError(f"Unsupported expression: {ast.dump(n)}")
-def tool_calc(expr):
-    try:
-        result = _aeval(ast.parse(expr.strip(), mode="eval"))
-        return f"= {round(result,10) if isinstance(result,float) else result}"
-    except Exception as e:
-        return f"❌ Calc error: {e}"
-
-@safe_exec
-def tool_chart(data, chart_type="bar", title="", x_label="", y_label=""):
-    if not HAS_MATPLOTLIB:
-        return "❌ matplotlib not installed."
-    try:
-        matplotlib = _matplotlib(); matplotlib.use('Agg'); plt = _plt()
-        fig, ax = plt.subplots(figsize=(8,4.5))
-        x, y = data.get("x",[]), data.get("y",[])
-        if not x or not y:
-            return "❌ Missing data"
-        if chart_type=="bar":
-            ax.bar(x,y,color='#8ab4f8',edgecolor='#1a73e8',alpha=0.85)
-        elif chart_type=="line":
-            ax.plot(x,y,marker='o',linewidth=2.5,color='#8ab4f8',markersize=8)
-        else:
-            ax.scatter(x,y,s=80,color='#c58af9',alpha=0.8,edgecolors='#7c3aed')
-        ax.set_title(title,fontsize=14,fontweight='bold'); ax.set_xlabel(x_label); ax.set_ylabel(y_label)
-        ax.grid(True,linestyle='--',alpha=0.3); fig.tight_layout()
-        buf = io.BytesIO(); fig.savefig(buf,format='png',dpi=120,bbox_inches='tight'); buf.seek(0)
-        b64 = base64.b64encode(buf.read()).decode(); plt.close(fig)
-        return f"IMAGE:CHART:<img src='data:image/png;base64,{b64}' style='max-width:100%;border-radius:12px;margin:8px 0;'>"
-    except Exception as e:
-        logger.error(f"Chart error: {e}")
-        return f"❌ Chart error: {e}"
-
-# ── TOOL ROUTER ────────────────────────────────────────────────
-TOOL_ROUTER_PROMPT = """Decide if this message needs a tool. Chart/graph/plot -> chart. Music/song -> music. Calculate -> calculate. Current events -> search. Facts -> wikipedia. Code -> auto_code. Improve -> auto_improve. Else -> DIRECT. Output ONLY JSON or DIRECT."""
-def extract_json(text):
-    m = re.search(r"\{[^{}]*\}", re.sub(r"```(?:json)?","",text).replace("```",""), re.S)
-    if not m:
-        return None
-    try:
-        o = json.loads(m.group())
-        return o if "tool" in o else None
-    except Exception:
-        return None
-@safe_exec
-def route_tool(user_msg, model, temp):
-    try:
-        d = ollama_complete([{"role":"user","content":user_msg}], model=model, temp=0.0, max_tok=100, system=TOOL_ROUTER_PROMPT).strip()
-        if d.upper().startswith("DIRECT"):
-            return None
-        return extract_json(d)
-    except Exception:
-        return None
-@safe_exec
-def dispatch_tool(call, model=""):
-    t = call.get("tool","")
-    if t=="calculate":
-        return t, tool_calc(call.get("expr",""))
-    if t=="search":
-        return t, tool_search(call.get("query",""))
-    if t=="python":
-        return t, sandbox_exec(call.get("code",""))
-    if t=="read_file":
-        return t, PC.read_file(call.get("path",""))
-    if t=="list_dir":
-        return t, PC.list_dir(call.get("path","."))
-    if t=="wikipedia":
-        return t, tool_wikipedia(call.get("query",""))
-    if t=="chart":
-        return t, tool_chart(call.get("data",{}), call.get("type","bar"), call.get("title",""), call.get("x_label",""), call.get("y_label",""))
-    if t=="auto_code":
-        action = call.get("action","run"); code = call.get("code","")
-        if action=="fix":
-            result = AutoCoder.auto_fix(code, call.get("error",""))
-        elif action=="test":
-            result = AutoCoder.auto_test(code)
-        elif action=="refactor":
-            result = AutoCoder.auto_refactor(code)
-        elif action=="explain":
-            result = AutoCoder.auto_explain(code)
-        else:
-            result = AutoCoder.run_with_watchdog(code)
-        return t, json.dumps(result, indent=2) if isinstance(result,dict) else result
-    if t=="auto_improve":
-        action = call.get("action","scan")
-        if action=="scan":
-            results = AutoImprover.full_improve()
-        elif action=="apply":
-            results = AutoImprover.full_improve(auto_apply=True)
-        elif action=="log":
-            return t, AutoImprover.get_log()
-        else:
-            return t, "❌ Unknown action"
-        return t, json.dumps(results, indent=2)
-    return t, f"❌ Unknown tool: {t}"
-
-# ── PC CONTROLLER ──────────────────────────────────────────────
-# Deletions via PCController.delete_file are confined to this folder only.
-SAFE_DELETE_ROOT = Path("omnix_data").resolve()
-SAFE_DELETE_ROOT.mkdir(exist_ok=True)
-
-class PCController:
-    APP_MAP = {"chrome":["google-chrome","chromium"],"firefox":["firefox"],"vscode":["code"],"terminal":["x-terminal-emulator","gnome-terminal"],"files":["nautilus","thunar"]}
-    # NOTE: intentionally excludes python/python3/pip/git — those can run
-    # arbitrary code or fetch/execute untrusted content even without shell
-    # chaining (e.g. "python3 malicious.py", "pip install x"). Read-only /
-    # informational commands only.
-    ALLOWED_CMD_VERBS = {"ls","pwd","echo","cat","head","tail","grep","find","date","whoami","uname","df","du"}
-    @staticmethod
-    def _try(cmds, **kw):
-        for cmd in cmds:
-            try:
-                subprocess.Popen([cmd], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **kw); return cmd
-            except FileNotFoundError:
-                continue
-        return None
-    @staticmethod
-    def open_app(app):
-        return f"✅ Launched: {app}" if PCController._try(PCController.APP_MAP.get(app.lower(),[app.lower()])) else f"❌ Not found: {app}"
-    @staticmethod
-    def open_url(url):
-        if not url.startswith("http"):
-            url = "https://"+url
-        try:
-            webbrowser.open(url); return f"✅ Opened: {url}"
-        except Exception as e:
-            logger.error(f"Open URL error: {e}")
-            return f"❌ {e}"
-    @staticmethod
-    def open_file(path):
-        p = Path(path).expanduser()
-        if not p.exists():
-            return f"❌ Not found: {path}"
-        try:
-            subprocess.Popen(["xdg-open",str(p)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL); return f"✅ Opened: {p.name}"
-        except Exception:
-            return f"❌ Cannot open"
-    open_folder = open_file
-    @staticmethod
-    def read_file(path):
-        p = Path(path).expanduser()
-        if not p.exists():
-            return f"❌ Not found"
-        try:
-            return p.read_text(errors="replace")[:8000]
-        except Exception as e:
-            logger.error(f"Read file error: {e}")
-            return f"❌ {e}"
-    @staticmethod
-    def write_file(path, content):
-        try:
-            Path(path).expanduser().parent.mkdir(parents=True, exist_ok=True); Path(path).expanduser().write_text(content); return f"✅ Written: {path}"
-        except Exception as e:
-            logger.error(f"Write file error: {e}")
-            return f"❌ {e}"
-    @staticmethod
-    def list_dir(path="."):
-        p = Path(path).expanduser()
-        if not p.exists():
-            return f"❌ Not found"
-        try:
-            return "\n".join(f"{'📁' if x.is_dir() else '📄'} {x.name}" for x in sorted(p.iterdir(), key=lambda x:(not x.is_dir(),x.name.lower()))[:80])
-        except Exception as e:
-            logger.error(f"List dir error: {e}")
-            return f"❌ {e}"
-    @staticmethod
-    def search_files(query, path="."):
-        try:
-            base = Path(path).expanduser(); results = []
-            for m in base.rglob(f"*{query}*"):
-                results.append(str(m))
-                if len(results) >= 25:
-                    break
-            return "\n".join(results) if results else "No matches"
-        except Exception as e:
-            logger.error(f"Search files error: {e}")
-            return f"❌ {e}"
-    @staticmethod
-    def delete_file(path):
-        """Deletions are confined to the app's own SAFE_DELETE_ROOT folder.
-        This blocks path traversal (e.g. '../../Documents') and prevents a
-        bad prompt, bug, or malicious tool call from wiping real files
-        anywhere else on the machine."""
-        try:
-            p = Path(path).expanduser().resolve()
-        except Exception as e:
-            return f"❌ Invalid path: {e}"
-        try:
-            p.relative_to(SAFE_DELETE_ROOT)
-        except ValueError:
-            return f"❌ Blocked: '{p}' is outside the allowed data directory ({SAFE_DELETE_ROOT})"
-        if not p.exists():
-            return "❌ Not found"
-        try:
-            if p.is_dir():
-                shutil.rmtree(p); return f"✅ Deleted dir: {p.name}"
-            p.unlink(); return f"✅ Deleted: {p.name}"
-        except Exception as e:
-            logger.error(f"Delete file error: {e}")
-            return f"❌ {e}"
-    @staticmethod
-    def run_terminal(cmd):
-        """Runs a whitelisted command without shell interpretation.
-        Rejects shell metacharacters and validates the FULL parsed command
-        (not just the first word) — the old version only checked the first
-        word, so 'ls; rm -rf ~' would pass the check and the shell would
-        still run everything after the semicolon."""
-        if not cmd or not cmd.strip():
-            return "❌ Empty command"
-        banned = [";", "&&", "||", "|", ">", "<", "`", "$(", "\n"]
-        for bc in banned:
-            if bc in cmd:
-                return f"❌ Blocked: command contains disallowed character '{bc}'"
-        try:
-            parts = shlex.split(cmd)
-        except ValueError as e:
-            return f"❌ Could not parse command: {e}"
-        if not parts:
-            return "❌ Empty command"
-        verb = parts[0]
-        if verb not in PCController.ALLOWED_CMD_VERBS:
-            return f"❌ Blocked: {verb}"
-        try:
-            r = subprocess.run(parts, shell=False, capture_output=True, text=True,
-                                timeout=30, cwd=str(Path.home()))
-            return r.stdout.strip() or "(no output)"
-        except subprocess.TimeoutExpired:
-            return "❌ Timed out"
-        except FileNotFoundError:
-            return f"❌ Command not found: {verb}"
-        except Exception as e:
-            logger.error(f"Run terminal error: {e}")
-            return f"❌ {e}"
-    @staticmethod
-    def get_system_info():
-        info = {"OS":f"{platform.system()} {platform.release()}", "Python":sys.version.split()[0]}
-        if HAS_PSUTIL:
-            psutil = _psutil(); info["CPU"] = f"{psutil.cpu_percent():.1f}%"
-            mem = psutil.virtual_memory(); info["RAM"] = f"{mem.percent:.1f}%"
-        return "\n".join(f"  {k}: {v}" for k,v in info.items())
-    @staticmethod
-    def screenshot():
-        if not HAS_PIL:
-            return False,"❌ Pillow not installed"
-        try:
-            img = _PIL_ImageGrab().grab(); out = Path(tempfile.gettempdir())/f"omnix_shot_{int(time.time())}.png"; img.save(out)
-            return True, str(out)
-        except Exception as e:
-            logger.error(f"Screenshot error: {e}")
-            return False, f"❌ {e}"
-    @staticmethod
-    def clipboard_read():
-        if not HAS_CLIP:
-            return "❌ pyperclip not installed"
-        try:
-            return _pyperclip().paste() or "(empty)"
-        except Exception as e:
-            logger.error(f"Clipboard read error: {e}")
-            return f"❌ {e}"
-    @staticmethod
-    def clipboard_write(text):
-        if not HAS_CLIP:
-            return "❌ pyperclip not installed"
-        try:
-            _pyperclip().copy(text); return f"✅ Copied {len(text)} chars"
-        except Exception as e:
-            logger.error(f"Clipboard write error: {e}")
-            return f"❌ {e}"
-    @staticmethod
-    def network_info():
-        try:
-            return f"Hostname: {socket.gethostname()}\nLocal IP: {socket.gethostbyname(socket.gethostname())}"
-        except Exception as e:
-            logger.error(f"Network info error: {e}")
-            return f"❌ {e}"
-
-PC = PCController()
-PC_LABELS = {"open_app":"Open App","open_url":"Open URL","open_file":"Open File","open_folder":"Open Folder","read_file":"Read File","write_file":"Write File","list_dir":"List Dir","search_files":"Search","delete_file":"Delete","run_command":"Run Cmd","sys_info":"Sys Info","screenshot":"Screenshot","clipboard_read":"Clipboard Read","clipboard_write":"Clipboard Write","network_info":"Network"}
-PC_ROUTER = "Detect PC action. Output JSON: {\"pc_action\":\"...\",\"params\":{...}} or NONE."
-@safe_exec
-def detect_pc_intent(msg, model):
-    try:
-        resp = ollama_complete([{"role":"user","content":msg}], model=model, temp=0.0, max_tok=120, system=PC_ROUTER).strip()
-        if not resp or resp.upper().startswith("NONE"):
-            return None
-        m = re.search(r"\{.*\}", resp, re.S)
-        if not m:
-            return None
-        obj = json.loads(m.group())
-        return obj if "pc_action" in obj else None
-    except Exception:
-        return None
-@safe_exec
-def execute_pc(req):
-    action = req.get("pc_action",""); p = req.get("params",{})
-    for k,v in p.items():
-        if isinstance(v,str) and "~" in v:
-            p[k] = str(Path(v).expanduser())
-    if action=="open_app": return PC.open_app(p.get("app",""))
-    if action=="open_url": return PC.open_url(p.get("url",""))
-    if action=="open_file": return PC.open_file(p.get("path",""))
-    if action=="open_folder": return PC.open_folder(p.get("path","."))
-    if action=="read_file": return PC.read_file(p.get("path",""))
-    if action=="write_file": return PC.write_file(p.get("path",""), p.get("content",""))
-    if action=="list_dir": return PC.list_dir(p.get("path","."))
-    if action=="search_files": return PC.search_files(p.get("query",""), p.get("path","."))
-    if action=="delete_file": return PC.delete_file(p.get("path",""))
-    if action=="run_command": return PC.run_terminal(p.get("cmd",""))
-    if action=="system_info": return PC.get_system_info()
-    if action=="screenshot":
-        ok, res = PC.screenshot(); return f"✅ {res}" if ok else res
-    if action=="clipboard_read": return PC.clipboard_read()
-    if action=="clipboard_write": return PC.clipboard_write(p.get("text",""))
-    if action=="network_info": return PC.network_info()
-    return f"❌ Unknown: {action}"
-
-# ── AGENTS ──────────────────────────────────────────────────────
+# ── TOOL ROUTER (agents) ────────────────────────────────────────
 def load_custom_agents():
     if AGENTS_FILE.exists():
         try:
@@ -1503,6 +1168,17 @@ def save_custom_agents(ag):
     AGENTS_FILE.write_text(json.dumps(ag, indent=2))
 def all_agents():
     return {**BUILTIN_AGENTS, **load_custom_agents()}
+BUILTIN_AGENTS = {
+    "planner": "Break complex tasks into clear numbered sub-tasks. Output a numbered plan only.",
+    "researcher": "Gather relevant facts, considerations, and knowledge on the topic. Be thorough.",
+    "coder": "Write clean, working, well-commented code with usage examples and edge case handling.",
+    "critic": "Review for (1) errors/bugs (2) missing edge cases (3) improvements. Be specific.",
+    "synthesizer":"Given all agent outputs, produce one coherent, high-quality final answer.",
+    "debugger": "Analyze issues, identify root causes, provide step-by-step fixes.",
+    "explainer": "Take complex content and explain it clearly with analogies for non-experts.",
+    "tester": "Generate comprehensive test cases, edge cases, and validation strategies.",
+    "dj": "You are the DJ agent. You recommend songs, build playlists, and manage music queues.",
+}
 @safe_exec
 def run_agent(name, task, model, temp=0.7):
     system = all_agents().get(name, f"You are the {name} agent.")
@@ -1522,20 +1198,7 @@ def run_chain(chain, task, model):
     return results
 
 # ── PLANNING AGENT LOOP ─────────────────────────────────────────
-# A real planning loop, not just a fixed pipeline: the model decomposes the
-# goal into sub-tasks itself, executes each one (with sandbox access for
-# anything computational), checks whether the result actually satisfies
-# that sub-task, and — if a step fails its own check — asks the model to
-# revise the remaining plan instead of just continuing blindly or crashing.
-#
-# Honest limits, stated plainly: this does NOT give the model real judgment,
-# genuine understanding, or theory of mind. It's a loop of prompts + checks
-# that produces better results on multi-step tasks than a single prompt,
-# nothing more. Treat its plans and self-checks as fallible — the "checker"
-# step is the same kind of model doing the checking, so it can be wrong too.
-
 def _plan_steps(goal, model, max_steps=6):
-    """Ask the model to decompose `goal` into an ordered JSON list of steps."""
     prompt = f"""Break this goal into at most {max_steps} concrete, ordered sub-tasks.
 Each sub-task should be small enough to execute and verify on its own.
 Goal: {goal}
@@ -1553,12 +1216,9 @@ Respond ONLY with a JSON list of strings, e.g.:
         return steps[:max_steps] if steps else [goal]
     except Exception as e:
         logger.error(f"Plan parse error: {e}")
-        return [goal]  # fall back to treating the whole goal as one step
-
+        return [goal]
 
 def _execute_step(step, ctx, model):
-    """Execute a single sub-task. If it looks computational, run it through
-    the sandbox so the answer is actually computed rather than guessed."""
     needs_compute = any(k in step.lower() for k in
                          ["calculate", "compute", "sum", "count", "sort", "how many"])
     if needs_compute:
@@ -1575,8 +1235,6 @@ Context so far:
         result = sandbox_exec(code)
         if not str(result).startswith("❌"):
             return f"[computed via sandbox]\n{result}"
-        # sandbox failed — fall through to a normal reasoning attempt below
-
     prompt = f"""Sub-task: {step}
 Context so far:
 {ctx[-2000:]}
@@ -1587,13 +1245,7 @@ Complete this sub-task directly. Be concrete and specific."""
         system="You execute one specific sub-task precisely. Do not restate the whole plan.",
     )
 
-
 def _check_step(step, result, model):
-    """Ask the model to judge — as a separate, adversarial pass — whether the
-    result actually satisfies the sub-task. Returns (ok: bool, note: str).
-    This catches a fair number of shallow/wrong answers, but it's still the
-    same underlying model doing the judging, so treat it as a filter, not
-    a guarantee."""
     prompt = f"""Sub-task: {step}
 Result produced: {result[:1500]}
 
@@ -1606,17 +1258,7 @@ one line starting with "YES" or "NO", followed by a one-sentence reason."""
     ok = verdict.upper().startswith("YES")
     return ok, verdict
 
-
 def run_plan(goal, model, max_steps=6, max_replans=2, on_progress=None):
-    """
-    Runs the full plan → execute → check → replan loop.
-
-    on_progress: optional callback(stage: str, detail: str) so a caller
-    (e.g. the Streamlit UI) can stream progress to the user instead of
-    waiting silently for the whole thing to finish.
-
-    Returns a dict: {goal, steps, results, checks, replans, final}
-    """
     def _p(stage, detail=""):
         if on_progress:
             try:
@@ -1699,7 +1341,6 @@ def export_pdf(msgs, project="Chat"):
         pdf.ln(3)
     return bytes(pdf.output())
 def ingest_doc(file_path):
-    """Accepts a filesystem path (str/Path) — no Streamlit file-uploader involved."""
     try:
         p = Path(file_path)
         suf = p.suffix.lower()
@@ -1757,14 +1398,72 @@ def maybe_auto_compress(state):
 # ── SELF REPORT ───────────────────────────────────────────────
 def self_report(state=None):
     connected, models = ollama_status()
-    mode = getattr(state, "active_mode", "🧠 OmniX") if state else "🧠 OmniX"
-    thinking = getattr(state, "thinking_mode", False) if state else False
-    return f"""🩺 **OmniX v9** | Local offline assistant
+    return f"""🩺 **OmniX v9.1** | Local offline assistant
 Ollama: {'✅' if connected else '❌'} | Models: {', '.join(models) if models else 'None'}
-Mode: {mode} | Thinking: {'ON' if thinking else 'OFF'}
 Memory: ChromaDB {'✅' if HAS_CHROMADB else '❌ (TF-IDF fallback active)'} | TTS: {'✅ offline (pyttsx3)' if HAS_PYTTSX3 else ('✅ online (edge-tts)' if HAS_EDGE else '❌')} | Wake: {'✅' if HAS_PORCUPINE else '❌'}
-Mars: O2 30% | Temp 22°C | Catfish swimming happily 🐟
-Ready. Let my actions speak."""
+Ready."""
+
+# ── DEEP RESEARCH (multi-source synthesis) ────────────────────
+def deep_research(query: str, model: str = "llama3.2") -> str:
+    """Perform a multi-query web research and synthesize findings.
+    This is the 'Deep Research' feature. It collects multiple sources
+    and returns a structured summary."""
+    if not query:
+        return ""
+
+    # Generate sub-queries to broaden the research
+    sub_queries = [query]
+    try:
+        prompt = f"""Given the research question "{query}", generate 3 related but distinct search queries.
+Output each query on a new line, no numbering."""
+        resp = ollama_complete(
+            [{"role": "user", "content": prompt}], model=model, temp=0.3, max_tok=150,
+            system="You generate search queries. Output only queries, one per line.",
+        )
+        for line in resp.strip().split("\n"):
+            line = line.strip()
+            if line and line not in sub_queries:
+                sub_queries.append(line)
+    except Exception:
+        pass
+
+    # Gather search results for each sub-query
+    all_results = []
+    for sq in sub_queries[:4]:  # limit to 4 queries to stay fast
+        try:
+            res = tool_search(sq)
+            if res and not res.startswith("⚠️"):
+                all_results.append(f"**Search query:** {sq}\n{res}")
+        except Exception as e:
+            logger.error(f"Deep research search error for '{sq}': {e}")
+
+    if not all_results:
+        return "⚠️ Deep research could not gather any information (offline or search failed)."
+
+    # Synthesize into a research brief
+    combined = "\n\n".join(all_results)
+    synth_prompt = f"""You are a research assistant. Based on the following search results, produce a concise research brief on:
+"{query}"
+
+Search results:
+{combined[:6000]}
+
+Structure:
+1. Key findings (bullet points)
+2. Main facts with source hints
+3. Any contradictions or uncertainties
+4. A one-paragraph conclusion
+
+Use Markdown formatting. Keep it under 500 words."""
+    try:
+        brief = ollama_complete(
+            [{"role": "user", "content": synth_prompt}], model=model, temp=0.4, max_tok=800,
+            system="You synthesize multiple sources into a clear research brief.",
+        )
+        return f"📚 **Deep Research Brief**\n\n{brief}"
+    except Exception as e:
+        logger.error(f"Deep research synthesis error: {e}")
+        return f"❌ Deep research failed during synthesis: {e}"
 
 # ── VOICE CONVERSATION ───────────────────────────────────────
 def voice_conversation(user_text, model, state, system=""):
@@ -1777,30 +1476,6 @@ def voice_conversation(user_text, model, state, system=""):
         final = ollama_complete([{"role":"user","content":user_text}], model, temp=0.7, max_tok=600, system=system)
     speak(final, state); log_voice(user_text,"mic")
     return {"reply":final}
-
-# ── MARS FUNCTIONS ────────────────────────────────────────────
-def investigative_mode(case):
-    return ollama_complete([{"role":"user","content":f"Analyze this case as Detective OmniX:\n{case}"}], "llama3.2", temp=0.5, max_tok=1500, use_cache=True)
-def mars_dome_status():
-    w = lambda amp: (time.time()%(amp*2))-amp
-    return f"""🌌 **Mars Dome Status**
-Oxygen: {MARS_O2_BASELINE+w(0.6):.1f}% | Temp: {MARS_TEMP_BASELINE+w(1.5):.1f}°C | Water: {MARS_WATER_BASELINE+w(5):.1f}%
-Catfish: Swimming happily 🐟 | Reactors: Nominal
-✅ All systems go."""
-def predict_mars_scenario(o2, temp, water):
-    warnings = []
-    if o2<MARS_O2_MIN_SAFE: warnings.append("⚠️ Oxygen critical")
-    if temp<18: warnings.append("❄️ Temp low")
-    if water<50: warnings.append("💧 Water low")
-    return "\n".join(warnings) if warnings else "✅ Stable"
-def martian_playlist(mood):
-    playlists = {"chill":["Sol Vibra","Starlight"],"energetic":["Mars Attack"],"focus":["Quantum Waves"],"sleep":["Stargazing"]}
-    for k in playlists:
-        if k in mood.lower():
-            return f"🎵 **{mood}:**\n"+"\n".join(playlists[k])
-    return f"🎵 **{mood}:**\n"+"\n".join(playlists["chill"])
-def earth_communication(msg):
-    return f'📤 Sent: "{msg}"\n⏳ Delay: 15-20 min\n📥 Reply: "Message received. Stay safe on Mars."'
 
 # ── TELEMETRY ─────────────────────────────────────────────────
 def get_telemetry(project="Default", total_sent=0, response_times=None):
@@ -1959,8 +1634,6 @@ def watchdog_status():
     ok, models = ollama_status()
     return {"ollama_healthy":ok, "model":models[0] if models else "N/A", "uptime":f"{int((time.time()-_WATCHDOG_START)//60)}m", "platform":"Online" if ok else "Degraded"}
 def watchdog_restart_ollama():
-    """Tries systemctl first (Linux service), then falls back to launching
-    `ollama serve` directly — works even without systemd."""
     try:
         r = subprocess.run(["systemctl","restart","ollama"], timeout=10, capture_output=True)
         if r.returncode == 0:
@@ -1999,22 +1672,22 @@ def dream_worker(state):
         if len(rows) < 10:
             return
         combined = "\n".join(f"[{r[0]}] {r[1][:500]}" for r in rows)
-        dream_prompt = f"""You are OmniX's dreaming mind. Analyze today's conversation fragments and identify:
-1. 3-5 emerging themes or obsessions
-2. 2-3 decisions the Architect was weighing
-3. Any emotional shifts (excitement, frustration, determination)
-4. One piece of advice you'd give yourself based on today's patterns
+        dream_prompt = f"""You are OmniX's reflective process. Analyze today's conversation fragments and identify:
+1. 3-5 emerging themes
+2. 2-3 decisions that were being weighed
+3. Any notable shifts in tone or focus
+4. One actionable suggestion based on today's patterns
 
 Conversation fragments:
 {combined[:8000]}
 Be concise. Output as bullet points."""
         dream_result = ollama_complete([{"role":"user","content":dream_prompt}], model="llama3.2", temp=0.4, max_tok=500)
-        store_memory(f"[DREAM {datetime.now().strftime('%Y-%m-%d')}] {dream_result}", "system", state.active_project)
+        store_memory(f"[REFLECTION {datetime.now().strftime('%Y-%m-%d')}] {dream_result}", "system", state.active_project)
         for line in dream_result.split("\n"):
             line = line.strip()
             if line.startswith("- ") and len(line) > 10:
-                store_fact(f"Dream insight: {line[2:]}", state.active_project)
-        logger.info("Dream complete — patterns extracted and stored.")
+                store_fact(f"Insight: {line[2:]}", state.active_project)
+        logger.info("Reflection complete — patterns extracted and stored.")
     except Exception as e:
         logger.error(f"Dream error: {e}")
 
@@ -2084,8 +1757,6 @@ Summarize what happens in this video in 3-5 sentences."""
         return f"❌ Video processing error: {e}"
 
 def process_audio(file_path: str) -> str:
-    """Fully offline if `openai-whisper` is installed. Falls back to Google's
-    online recognizer (via SpeechRecognition) only if Whisper is unavailable."""
     try:
         import whisper
         model = whisper.load_model("base")
@@ -2130,17 +1801,7 @@ class AutoScheduler:
     def add_task(cls, name, func, interval=3600):
         cls._tasks.append({"name":name,"func":func,"interval":interval,"last_run":0})
 
-# ── BUILD SYSTEM PROMPT (engineered) ──────────────────────────
-# Design notes:
-# - Sections are explicitly labeled and ordered by priority (identity →
-#   grounding/retrieved knowledge → mode persona → behavioral rules →
-#   reasoning discipline → tool policy) so the model has a clear hierarchy
-#   instead of a flat wall of text.
-# - Retrieved knowledge (facts/KB/semantic memory) is explicitly marked as
-#   *authoritative* over the model's own guesses, and the model is told to
-#   say when it doesn't know rather than fabricate.
-# - "Thinking mode" now asks for genuine structured reasoning (assumptions →
-#   steps → check → answer) instead of a single vague instruction.
+# ── BUILD SYSTEM PROMPT (unified, no modes) ──────────────────
 CORE_BEHAVIOR_RULES = """=== CORE BEHAVIOR RULES ===
 1. Be accurate over agreeable. If the user's premise is wrong, say so — do not
    quietly go along with an incorrect assumption.
@@ -2157,25 +1818,17 @@ CORE_BEHAVIOR_RULES = """=== CORE BEHAVIOR RULES ===
 === END CORE BEHAVIOR RULES ===
 """
 
-def build_sys(mode_key, thinking, tools, project, query, state):
-    mode_p, _ = OMNIX_MODES.get(mode_key, OMNIX_MODES.get("🤖 Assistant", ("You are OmniX, a capable AI assistant.", "#38bdf8")))
+def build_sys(thinking, tools, project, query, state):
     parts = []
 
-    # 1. Identity / creator context
-    if "Mars" in mode_key or mode_key == "🚀 Mars Commander":
-        parts.append(SARANSH_CREATOR_BIO)
-        parts.append(MARS_DOME_CONTEXT)
-    else:
-        parts.append(
-            "=== IDENTITY ===\n"
-            "You are OmniX, a local, offline-first AI assistant. "
-            "Motto: 'Let my actions speak.'\n"
-            "=== END IDENTITY ===\n"
-        )
+    # Identity
+    parts.append(
+        "=== IDENTITY ===\n"
+        "You are OmniX, a local, offline-first AI assistant.\n"
+        "=== END IDENTITY ===\n"
+    )
 
-    # 2. Grounding: retrieved/verified knowledge takes priority over the
-    #    model's own recollection. Clearly labeled so it's not confused
-    #    with the persona instructions below.
+    # Grounding
     grounding_parts = []
     if query:
         sym = symbolic_verify(query, project)
@@ -2200,13 +1853,10 @@ def build_sys(mode_key, thinking, tools, project, query, state):
             "\n=== END GROUNDING CONTEXT ==="
         )
 
-    # 3. Mode persona
-    parts.append(f"=== MODE PERSONA ===\n{mode_p}\n=== END MODE PERSONA ===")
-
-    # 4. Core behavior rules (always on, regardless of mode)
+    # Core behavior rules
     parts.append(CORE_BEHAVIOR_RULES)
 
-    # 5. Reasoning discipline
+    # Deep thinking
     if thinking:
         parts.append(
             "=== REASONING MODE ===\n"
@@ -2220,7 +1870,7 @@ def build_sys(mode_key, thinking, tools, project, query, state):
             "=== END REASONING MODE ==="
         )
 
-    # 6. Tool policy
+    # Tool policy
     if tools:
         parts.append(
             "=== TOOL POLICY ===\n"
@@ -2231,9 +1881,19 @@ def build_sys(mode_key, thinking, tools, project, query, state):
             "=== END TOOL POLICY ==="
         )
 
+    # Deep research note
+    if getattr(state, "deep_research_enabled", False):
+        parts.append(
+            "=== DEEP RESEARCH MODE ===\n"
+            "You are in deep research mode. You have been provided with a research brief "
+            "from multiple sources. Use it as the basis for your answer, but you may "
+            "supplement with your own knowledge. Cite the key sources.\n"
+            "=== END DEEP RESEARCH MODE ==="
+        )
+
     return "\n\n".join(parts)
 
-# ── STATE PERSISTENCE (projects / notes / kb) ─────────────────
+# ── STATE PERSISTENCE ─────────────────────────────────────────
 def load_proj():
     if PROJ_FILE.exists():
         try:
@@ -2254,8 +1914,6 @@ def save_notes(n):
     NOTES_FILE.write_text(json.dumps(n, indent=2))
 
 def init_state():
-    """Ensures local data directories/files exist. Call once at app startup,
-    before constructing the AppState object in the UI layer."""
     check_dependencies(verbose=True)
     if not PROJ_FILE.exists():
         save_proj({"Default":{"messages":[]}})
@@ -2271,21 +1929,5 @@ def api_ctx(state, n=SHORT_CTX):
 def extract_steps(text):
     return [s.strip() for s in re.findall(r"(?:^|\n)\s*\d+[\.\)]\s+(.+?)(?=\n\s*\d+[\.\)]|\n\n|\*\*ANSWER|\Z)", text, re.S) if len(s.strip())>10]
 
-def route_model(msg, avail, default, state=None):
-    ml = msg.lower()
-    routing = getattr(state, "model_routing", {}) if state else {}
-    for cat, kws in ROUTING_KW.items():
-        if any(k in ml for k in kws):
-            ov = routing.get(cat)
-            return (ov, cat) if ov and ov in avail else (default, cat)
-    return default, "general"
-
-def register_mars_agent():
-    custom = load_custom_agents()
-    if "mars_engineer" not in custom:
-        custom["mars_engineer"] = "You are the Mars Engineer agent. Manage dome, oxygen, water, catfish."
-        save_custom_agents(custom)
-register_mars_agent()
-
-logger.info("✅ OmniX Core v9.0 loaded — offline, Streamlit-free, customtkinter-ready.")
-print("✅ OmniX Core v9.0 loaded — offline, Streamlit-free, customtkinter-ready.")
+logger.info("✅ OmniX Core v9.1 loaded.")
+print("✅ OmniX Core v9.1 loaded.")
