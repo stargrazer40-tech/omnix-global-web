@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+=#!/usr/bin/env python3
 """OmniX AI — Premium SaaS Interface (No Modes, Deep Research, Clean UI)
 
 Run with:
@@ -627,6 +627,9 @@ def show_toast(message, toast_type="info"):
 
 # ───────────────────────── UI Components ─────────────────────────
 def render_sidebar():
+    # Keep restored/partial Streamlit sessions usable even if an older session
+    # does not contain this newer UI-state key yet.
+    sidebar_section = st.session_state.get("sidebar_section", "chat")
     with st.sidebar:
         st.markdown(
             f"""
@@ -663,7 +666,7 @@ def render_sidebar():
             if st.button(
                 "💬 Chat",
                 use_container_width=True,
-                type="primary" if st.session_state.sidebar_section == "chat" else "secondary",
+                type="primary" if sidebar_section == "chat" else "secondary",
             ):
                 st.session_state.sidebar_section = "chat"
                 st.rerun()
@@ -671,14 +674,14 @@ def render_sidebar():
             if st.button(
                 "⚙️ Settings",
                 use_container_width=True,
-                type="primary" if st.session_state.sidebar_section == "settings" else "secondary",
+                type="primary" if sidebar_section == "settings" else "secondary",
             ):
                 st.session_state.sidebar_section = "settings"
                 st.rerun()
 
         st.divider()
 
-        if st.session_state.sidebar_section == "chat":
+        if sidebar_section == "chat":
             render_chat_sidebar()
         else:
             render_settings_sidebar()
@@ -928,7 +931,8 @@ def main():
 
     if "omnix_initialized" not in st.session_state:
         init_state()
-        init_app_state()
+    # This function fills in any keys absent from restored or upgraded sessions.
+    init_app_state()
 
     render_toast()
     render_sidebar()
