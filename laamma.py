@@ -1,4 +1,4 @@
-=#!/usr/bin/env python3
+#!/usr/bin/env python3
 """OmniX AI — Premium SaaS Interface (No Modes, Deep Research, Clean UI)
 
 Run with:
