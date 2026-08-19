@@ -30,7 +30,7 @@ from omnixcore import (
 
 # ───────────────────────── Configuration ─────────────────────────
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
-DEFAULT_GROQ_MODEL = "llama-3.2:8b"
+DEFAULT_GROQ_MODEL = "Llama 3.1 8B"
 APP_VERSION = "3.0.1"
 
 # ───────────────────────── Custom CSS ─────────────────────────
