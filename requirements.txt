@@ -1,3 +1,4 @@
+
 requests>=2.31,<3
 streamlit>=1.38,<2
 PyYAML>=6.0,<7
@@ -6,13 +7,13 @@ pypdf>=4.0,<6
 python-docx>=1.1,<2
 fpdf2>=2.7,<3
 Pillow>=10.0,<12
+beautifulsoup4>=4.12,<5
 psutil>=5.9,<8
 pyperclip>=1.8,<2
 numpy>=1.26,<3
 sympy>=1.12,<2
 matplotlib>=3.8,<4
 opencv-python>=4.9,<5
-beautifulsoup4>=4.12,<5
 pyttsx3>=2.90,<3
 edge-tts>=6.1,<8
 pygame>=2.5,<3
